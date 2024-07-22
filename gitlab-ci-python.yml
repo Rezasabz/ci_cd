@@ -1,0 +1,47 @@
+stages:
+  - test
+  - build
+  - deploy
+
+run-test:
+  stage: test
+  before_script:
+    - "echo before script"
+  script:
+    - "echo RUN TEST"
+  after_script:
+    - "after script"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'  # Run for all changes to a merge request's source branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH       # Run for all changes to the default branch
+
+build-docker-image:
+  stage: build
+  before_script:
+    - "echo login to $HUB_URL"
+    - "docker login --username $HUB_USER --password $HUB_PASSWORD $HUB_URL"
+  script:
+    - "echo build docker image"
+    - "docker build -t $HUB_URL/projects/embedproject:latest ."
+    - "echo docker push embedproject project"
+    - "docker push $HUB_URL/projects/embedproject:latest"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'  # Run for all changes to a merge request's source branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH       # Run for all changes to the default branch
+
+deploy:
+  stage: deploy
+  before_script:
+    - mkdir -p ~/.ssh
+    - ssh-keygen -q -t rsa -N '' -f ~/.ssh/id_rsa
+    - chmod 644 ~/.ssh/id_rsa.pub
+    - sshpass -V
+    - sshpass -p "$password" ssh-copy-id -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP
+    - "echo pub_key added"
+  script:
+    - "echo deploy to production"
+    - ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "
+      cd /home/fara/ci-cd-test && docker compose pull && docker compose up -d"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'  # Run for all changes to a merge request's source branch
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH       # Run for all changes to the default branch

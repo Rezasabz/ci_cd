@@ -1,0 +1,69 @@
+stages:
+  - test
+  - build
+  - build-docker
+  - deploy
+
+
+variables:
+  HUB_USER: $HUB_USER
+  HUB_PASSWORD: $HUB_PASSWORD
+  REGISTRY_URL: tab17.sfara.ir
+  MAVEN_CLI_OPTS: >-
+    -Dmaven.test.skip=true
+    --settings .m2/settings.xml
+
+run-test:
+  stage: test
+  script:
+    - "echo test"
+    - "echo $CI_PROJECT_DIR"
+  rules:
+  - if: $CI_COMMIT_BRANCH == 'master'  # Run for all changes to a merge request's source branch
+
+
+build:
+  stage: build
+  image: "tab17.sfara.ir/utils/maven:3.8.7-openjdk-18"
+
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package
+    - mvn $MAVEN_CLI_OPTS clean install -U
+
+  artifacts:
+    paths:
+      - target/tab17-1.0.0.jar
+
+
+  rules:
+  - if: $CI_COMMIT_BRANCH == 'master'  # Run for all changes to a merge request's source branch
+
+build-docker:
+  before_script:
+    - "echo login to $HUB_URL"
+    - docker login --username $HUB_USER --password $HUB_PASSWORD $REGISTRY_URL
+  stage: build-docker
+  script:
+    - "echo build docker image"
+    - "docker build -t $HUB_URL/projects/tab17-back:latest ."
+    - "echo docker push tab17-back"
+    - "docker push $HUB_URL/projects/tab17-back:latest"
+  rules:
+    - if: $CI_COMMIT_BRANCH == 'master'  # Run for all changes to a merge request's source branch
+
+deploy:
+  stage: deploy
+  before_script:
+    - mkdir -p ~/.ssh
+    - ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+    - chmod 644 ~/.ssh/id_rsa.pub
+    - sshpass -V
+    - sshpass -p "$password" ssh-copy-id -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP
+    - "echo pub_key added"
+
+  script:
+    - "echo deploy to production"
+    - ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP "
+      cd tab17/backend-source/ir_sfara_tab_17_backend && docker-compose -f ops/compose/docker-compose-prod.yml pull && docker-compose -f ops/compose/docker-compose-prod.yml up -d"
+  rules:
+  - if: $CI_COMMIT_BRANCH == 'master'  # Run for all changes to a merge request's source branch
